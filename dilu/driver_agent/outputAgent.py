@@ -9,7 +9,7 @@ from langchain.output_parsers import ResponseSchema
 from langchain.output_parsers import StructuredOutputParser
 from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate
 
-from DiLu.dilu.scenario.DBBridge import DBBridge
+from dilu.scenario.DBBridge import DBBridge
 
 
 class OutputParser:

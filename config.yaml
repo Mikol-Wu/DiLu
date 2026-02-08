@@ -1,5 +1,5 @@
 ############ Large language model config ############
-OPENAI_API_TYPE: # 'openai' or 'azure' or 'deepseek'
+OPENAI_API_TYPE: 'deepseek'
 # below are for Openai
 OPENAI_KEY: # 'sk-xxxxxx' 
 OPENAI_CHAT_MODEL: 'gpt-4-1106-preview' # Alternative models: 'gpt-3.5-turbo-16k-0613' (note: performance may vary)

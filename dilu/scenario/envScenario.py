@@ -12,8 +12,8 @@ from highway_env.vehicle.controller import MDPVehicle
 from highway_env.vehicle.behavior import IDMVehicle
 import numpy as np
 
-from DiLu.dilu.scenario.DBBridge import DBBridge
-from DiLu.dilu.scenario.envPlotter import ScePlotter
+from dilu.scenario.DBBridge import DBBridge
+from dilu.scenario.envPlotter import ScePlotter
 
 
 ACTIONS_ALL = {
