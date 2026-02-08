@@ -1,22 +1,45 @@
 import os
 import textwrap
 import time
-from langchain_deepseek import ChatDeepSeek
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain.chat_models import AzureChatOpenAI, ChatOpenAI
+from langchain.schema import HumanMessage, SystemMessage
+
 from rich import print
+
 
 class ReflectionAgent:
     def __init__(
         self, temperature: float = 0.0, verbose: bool = False
     ) -> None:
-        print("Using Deepseek Chat API")
-        os.getenv
-        self.llm = ChatDeepSeek(
-            temperature=temperature,
-            model_name=os.getenv("DEEPSEEK_MODEL_NAME"),
-            max_tokens=2000,
-            request_timeout=60,
-        )    
+        oai_api_type = os.getenv("OPENAI_API_TYPE")
+        if oai_api_type == "azure":
+            print("Using Azure Chat API")
+            self.llm = AzureChatOpenAI(
+                deployment_name=os.getenv("AZURE_CHAT_DEPLOY_NAME"),
+                temperature=temperature,
+                max_tokens=1000,
+                request_timeout=60,
+            )
+        elif oai_api_type == "openai":
+            print("[red]Cautious: Reflection mode uses OpenAI GPT-4, may cost a lot of money![/red]")
+            self.llm = ChatOpenAI(
+                temperature=temperature,
+                model_name='gpt-4-1106-preview',
+                max_tokens=1000,
+                request_timeout=60,
+            )
+        elif oai_api_type == "deepseek":
+            print("Use DeepSeek (OpenAI-compatible) API for reflection")
+            self.llm = ChatOpenAI(
+                temperature=temperature,
+                model_name=os.getenv("OPENAI_CHAT_MODEL", "deepseek-reasoner"),
+                openai_api_base=os.getenv("OPENAI_API_BASE", "https://api.deepseek.com"),
+                openai_api_key=os.getenv("OPENAI_API_KEY"),
+                max_tokens=1000,
+                request_timeout=60,
+            )
+        else:
+            raise ValueError("Unknown OPENAI_API_TYPE: should be azure / openai / deepseek")
 
     def reflection(self, human_message: str, llm_response: str) -> str:
         delimiter = "####"

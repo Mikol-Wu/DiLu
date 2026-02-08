@@ -2,9 +2,15 @@ import os
 import textwrap
 from langchain.vectorstores import Chroma
 from langchain.embeddings.openai import OpenAIEmbeddings
+
+# LangChain versions differ in where HuggingFaceEmbeddings lives.
+try:
+    from langchain.embeddings import HuggingFaceEmbeddings  # type: ignore
+except Exception:  # pragma: no cover
+    from langchain.embeddings.huggingface import HuggingFaceEmbeddings  # type: ignore
 from langchain.docstore.document import Document
-# from langchain_core.embeddings.embeddings import Embeddings
-from DiLu.dilu.scenario.envScenario import EnvScenario
+
+from dilu.scenario.envScenario import EnvScenario
 
 
 class DrivingMemory:
@@ -15,13 +21,30 @@ class DrivingMemory:
             # 'sce_encode' is deprecated for now.
             raise ValueError("encode_type sce_encode is deprecated for now.")
         elif encode_type == 'sce_language':
-            self.embedding = OpenAIEmbeddings(
-                openai_api_key = os.environ['DEEPSEEK_API_KEY'],
-                openai_api_base = os.environ['DEEPSEEK_API_URL'],
-            )
-            # else:
-            #     raise ValueError(
-            #         "Unknown DeepSeek API: should be DeepSeek API")
+            # Memory embeddings backend:
+            # - openai/azure: use OpenAIEmbeddings (paid)
+            # - hf: use local sentence-transformers embeddings (free; recommended with DeepSeek)
+            embedding_backend = os.getenv("EMBEDDING_BACKEND")
+            if embedding_backend is None:
+                # sensible default: DeepSeek -> hf, others -> openai/azure
+                embedding_backend = "hf" if os.getenv("OPENAI_API_TYPE") == "deepseek" else "openai"
+
+            if embedding_backend == "hf":
+                model_name = os.getenv("HF_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+                self.embedding = HuggingFaceEmbeddings(model_name=model_name)
+            else:
+                # fall back to OpenAI embeddings (works for both openai and azure setups)
+                if os.environ.get("OPENAI_API_TYPE") == 'azure':
+                    self.embedding = OpenAIEmbeddings(
+                        deployment=os.environ['AZURE_EMBED_DEPLOY_NAME'], chunk_size=1)
+                elif os.environ.get("OPENAI_API_TYPE") in ('openai', 'deepseek'):
+                    # deepseek uses OpenAI-compatible base/key, but embeddings may not be available.
+                    # If you really want API embeddings, set EMBEDDING_BACKEND=openai and ensure your
+                    # API base/key supports /v1/embeddings.
+                    self.embedding = OpenAIEmbeddings()
+                else:
+                    raise ValueError(
+                        "Unknown OPENAI_API_TYPE: should be azure / openai / deepseek")
             db_path = os.path.join(
                 './db', 'chroma_5_shot_20_mem/') if db_path is None else db_path
             self.scenario_memory = Chroma(
@@ -43,7 +66,6 @@ class DrivingMemory:
                 query_scenario, k=top_k)
             fewshot_results = []
             for idx in range(0, len(similarity_results)):
-                # print(f"similarity score: {similarity_results[idx][1]}")
                 fewshot_results.append(similarity_results[idx][0].metadata)
         return fewshot_results
 
@@ -52,16 +74,13 @@ class DrivingMemory:
             pass
         elif self.encode_type == 'sce_language':
             sce_descrip = sce_descrip.replace("'", '')
-        # https://docs.trychroma.com/usage-guide#using-where-filters
         get_results = self.scenario_memory._collection.get(
             where_document={
                 "$contains": sce_descrip
             }
         )
-        # print("get_results: ", get_results)
 
         if len(get_results['ids']) > 0:
-            # already have one
             id = get_results['ids'][0]
             self.scenario_memory._collection.update(
                 ids=id, metadatas={"human_question": human_question,

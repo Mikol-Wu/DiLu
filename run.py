@@ -8,26 +8,43 @@ from rich import print
 import gymnasium as gym
 from gymnasium.wrappers import RecordVideo
 
-from DiLu.dilu.scenario.envScenario import EnvScenario
-from DiLu.dilu.driver_agent.driverAgent import DriverAgent
-from DiLu.dilu.driver_agent.vectorStore import DrivingMemory
-from DiLu.dilu.driver_agent.reflectionAgent import ReflectionAgent
+from dilu.scenario.envScenario import EnvScenario
+from dilu.driver_agent.driverAgent import DriverAgent
+from dilu.driver_agent.vectorStore import DrivingMemory
+from dilu.driver_agent.reflectionAgent import ReflectionAgent
 
 
 test_list_seed = [5838, 2421, 7294, 9650, 4176, 6382, 8765, 1348,
                   4213, 2572, 5678, 8587, 512, 7523, 6321, 5214, 31]
 
 
-
-
 def setup_env(config):
-    if config['DEEPSEEK_API_TYPE'] == "deepseek":
-        os.environ["DEEPSEEK_API_KEY"] = config["DEEPSEEK_API_KEY"]
-        os.environ["DEEPSEEK_MODEL_NAME"] = config["DEEPSEEK_MODEL_NAME"]
-        os.environ["DEEPSEEK_API_URL"] = config["DEEPSEEK_API_URL"]
+    if config['OPENAI_API_TYPE'] == 'azure':
+        os.environ["OPENAI_API_TYPE"] = config['OPENAI_API_TYPE']
+        os.environ["OPENAI_API_VERSION"] = config['AZURE_API_VERSION']
+        os.environ["OPENAI_API_BASE"] = config['AZURE_API_BASE']
+        os.environ["OPENAI_API_KEY"] = config['AZURE_API_KEY']
+        os.environ["AZURE_CHAT_DEPLOY_NAME"] = config['AZURE_CHAT_DEPLOY_NAME']
+        os.environ["AZURE_EMBED_DEPLOY_NAME"] = config['AZURE_EMBED_DEPLOY_NAME']
+    elif config['OPENAI_API_TYPE'] == 'openai':
+        os.environ["OPENAI_API_TYPE"] = config['OPENAI_API_TYPE']
+        os.environ["OPENAI_API_KEY"] = config['OPENAI_KEY']
+        os.environ["OPENAI_CHAT_MODEL"] = config['OPENAI_CHAT_MODEL']
+    elif config['OPENAI_API_TYPE'] == 'deepseek':
+        # DeepSeek provides an OpenAI-compatible Chat Completions API.
+        # We reuse LangChain's ChatOpenAI wrapper by setting OPENAI_API_BASE.
+        os.environ["OPENAI_API_TYPE"] = 'deepseek'
+        os.environ["OPENAI_API_KEY"] = config['DEEPSEEK_API_KEY']
+        os.environ["OPENAI_API_BASE"] = config.get('DEEPSEEK_BASE_URL', 'https://api.deepseek.com')
+        os.environ["OPENAI_CHAT_MODEL"] = config.get('DEEPSEEK_CHAT_MODEL', 'deepseek-chat')
     else:
-        raise ValueError("Unknown OPENAI_API_TYPE, should be azure or openai")
+        raise ValueError("Unknown OPENAI_API_TYPE, should be azure / openai / deepseek")
 
+    # memory embedding backend config (used by DrivingMemory)
+    if 'EMBEDDING_BACKEND' in config:
+        os.environ['EMBEDDING_BACKEND'] = str(config['EMBEDDING_BACKEND'])
+    if 'HF_EMBED_MODEL' in config:
+        os.environ['HF_EMBED_MODEL'] = str(config['HF_EMBED_MODEL'])
 
     # environment setting
     env_config = {
@@ -63,10 +80,8 @@ def setup_env(config):
 if __name__ == '__main__':
     import warnings
     warnings.filterwarnings("ignore")
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    config_path = os.path.join(script_dir, "config.yaml")
-    with open(config_path, 'r') as file:
-      config = yaml.safe_load(file)
+
+    config = yaml.load(open('config.yaml'), Loader=yaml.FullLoader)
     env_config = setup_env(config)
 
     REFLECTION = config["reflection_module"]
@@ -137,7 +152,6 @@ if __name__ == '__main__':
                 sce_descrip = sce.describe(i)
                 avail_action = sce.availableActionsDescription()
                 print('[cyan]Scenario description: [/cyan]\n', sce_descrip)
-                # print('[cyan]Available actions: [/cyan]\n',avail_action)
                 action, response, human_question, fewshot_answer = DA.few_shot_decision(
                     scenario_description=sce_descrip, available_actions=avail_action,
                     previous_decisions=action,

@@ -4,12 +4,11 @@ import time
 from rich import print
 from typing import List
 
-from langchain_deepseek import ChatDeepSeek
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from langchain.chat_models import AzureChatOpenAI, ChatOpenAI
+from langchain.schema import AIMessage, HumanMessage, SystemMessage
 from langchain.callbacks import get_openai_callback, OpenAICallbackHandler, StreamingStdOutCallbackHandler
-from langchain_core.callbacks import CallbackManager
 
-from DiLu.dilu.scenario.envScenario import EnvScenario
+from dilu.scenario.envScenario import EnvScenario
 
 
 delimiter = "####"
@@ -48,28 +47,51 @@ example_answer = textwrap.dedent(f"""\
 class DriverAgent:
     def __init__(
         self, sce: EnvScenario,
-        temperature: float = 0,
-        verbose: bool = False
+        temperature: float = 0, verbose: bool = False
     ) -> None:
         self.sce = sce
-        print("Use deepseek API")
-        callback_handler = OpenAICallbackHandler()
-        callback_manager = CallbackManager([callback_handler])
-        self.llm = ChatDeepSeek(
-            temperature=temperature,
-            api_key=os.getenv("DEEPSEEK_API_KEY"),
-            api_base=os.getenv("DEEPSEEK_API_URL"),
-            model_name=os.getenv("DEEPSEEK_MODEL_NAME"),
-            max_tokens=2000,
-            request_timeout=60,
-            streaming=True,
-            callback_manager=callback_manager
-        )
-
+        oai_api_type = os.getenv("OPENAI_API_TYPE")
+        if oai_api_type == "azure":
+            print("Using Azure Chat API")
+            self.llm = AzureChatOpenAI(
+                callbacks=[
+                    OpenAICallbackHandler()
+                ],
+                deployment_name=os.getenv("AZURE_CHAT_DEPLOY_NAME"),
+                temperature=temperature,
+                max_tokens=2000,
+                request_timeout=60,
+                streaming=True,
+            )
+        elif oai_api_type == "openai":
+            print("Use OpenAI API")
+            self.llm = ChatOpenAI(
+                temperature=temperature,
+                callbacks=[OpenAICallbackHandler()],
+                model_name=os.getenv("OPENAI_CHAT_MODEL"),
+                max_tokens=2000,
+                request_timeout=60,
+                streaming=True,
+            )
+        elif oai_api_type == "deepseek":
+            # DeepSeek is OpenAI-compatible. We set OPENAI_API_BASE / OPENAI_API_KEY in run_dilu.py.
+            # NOTE: LangChain's token callback may not recognize DeepSeek model names, so we avoid it here.
+            print("Use DeepSeek (OpenAI-compatible) API")
+            self.llm = ChatOpenAI(
+                temperature=temperature,
+                model_name=os.getenv("OPENAI_CHAT_MODEL", "deepseek-chat"),
+                openai_api_base=os.getenv("OPENAI_API_BASE", "https://api.deepseek.com"),
+                openai_api_key=os.getenv("OPENAI_API_KEY"),
+                max_tokens=2000,
+                request_timeout=60,
+                streaming=True,
+            )
+        else:
+            raise ValueError("Unknown OPENAI_API_TYPE: should be azure / openai / deepseek")
 
     def few_shot_decision(self, scenario_description: str = "Not available", previous_decisions: str = "Not available", available_actions: str = "Not available", driving_intensions: str = "Not available", fewshot_messages: List[str] = None, fewshot_answers: List[str] = None):
         system_message = textwrap.dedent(f"""\
-        You are DeepSeek, a large language model trained by DeepSeek. Now you act as a mature driving assistant, who can give accurate and correct advice for human driver in complex urban driving scenarios.
+        You are ChatGPT, a large language model trained by OpenAI. Now you act as a mature driving assistant, who can give accurate and correct advice for human driver in complex urban driving scenarios.
         You will be given a detailed description of the driving scenario of current frame along with your history of previous decisions. You will also be given the available actions you are allowed to take. All of these elements are delimited by {delimiter}.
 
         Your response should use the following format:
@@ -100,8 +122,6 @@ class DriverAgent:
             raise ValueError("fewshot_message is None")
         messages = [
             SystemMessage(content=system_message),
-            # HumanMessage(content=example_message),
-            # AIMessage(content=example_answer),
         ]
         for i in range(len(fewshot_messages)):
             messages.append(
@@ -113,7 +133,6 @@ class DriverAgent:
         messages.append(
             HumanMessage(content=human_message)
         )
-        # print("fewshot number:", (len(messages) - 2)/2)
         start_time = time.time()
         print("[cyan]Agent answer:[/cyan]")
         response_content = ""
@@ -150,7 +169,11 @@ class DriverAgent:
             messages = [
                 HumanMessage(content=check_message),
             ]
-            with get_openai_callback() as cb:
+            # Token counting callback is OpenAI-specific; skip it for non-OpenAI providers.
+            if os.getenv("OPENAI_API_TYPE") in ("openai", "azure"):
+                with get_openai_callback() as cb:
+                    check_response = self.llm(messages)
+            else:
                 check_response = self.llm(messages)
             result = int(check_response.content.split(delimiter)[-1])
 

@@ -1,8 +1,29 @@
-DEEPSEEK_API_TYPE: deepseek
-DEEPSEEK_MODEL_NAME: deepseek-chat
-DEEPSEEK_API_KEY: sk-blABC8urTBhDi9cr053dDc6c8a0644F19e2f06A3776d5282
-DEEPSEEK_API_URL: "https://api.vveai.com/v1/"
-############### settings ############
+############ Large language model config ############
+OPENAI_API_TYPE: # 'openai' or 'azure' or 'deepseek'
+# below are for Openai
+OPENAI_KEY: # 'sk-xxxxxx' 
+OPENAI_CHAT_MODEL: 'gpt-4-1106-preview' # Alternative models: 'gpt-3.5-turbo-16k-0613' (note: performance may vary)
+
+# below are for DeepSeek (OpenAI-compatible API)
+# Official docs: base_url can be https://api.deepseek.com (or /v1 for OpenAI compatibility)
+# Models: deepseek-chat (non-thinking) / deepseek-reasoner (thinking)
+DEEPSEEK_API_KEY: 'sk-b3183d417f0e4c4086d7eebffffe0fca'
+DEEPSEEK_BASE_URL: 'https://api.deepseek.com'
+DEEPSEEK_CHAT_MODEL: 'deepseek-chat'
+
+# Embedding backend for the memory module:
+# - openai: use OpenAIEmbeddings (requires OpenAI embedding API)
+# - hf: use local sentence-transformers embeddings (recommended for deepseek to keep cost low)
+EMBEDDING_BACKEND: 'hf'
+HF_EMBED_MODEL: 'sentence-transformers/all-MiniLM-L6-v2'
+# below are for Azure OAI service
+AZURE_API_BASE: # https://xxxxxxx.openai.azure.com/
+AZURE_API_VERSION: "2023-07-01-preview"
+AZURE_API_KEY: #'xxxxxxx'
+AZURE_CHAT_DEPLOY_NAME: # chat model deployment name
+AZURE_EMBED_DEPLOY_NAME: # text embed model deployment name  
+
+############### DiLu settings ############
 reflection_module: False # True or False
 few_shot_num: 3 # 0 for zero-shot
 episodes_num: 3 # run episodes
