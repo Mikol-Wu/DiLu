@@ -30,13 +30,16 @@ def setup_env(config):
         os.environ["OPENAI_API_TYPE"] = config['OPENAI_API_TYPE']
         os.environ["OPENAI_API_KEY"] = config['OPENAI_KEY']
         os.environ["OPENAI_CHAT_MODEL"] = config['OPENAI_CHAT_MODEL']
+    
     elif config['OPENAI_API_TYPE'] == 'deepseek':
-        # DeepSeek provides an OpenAI-compatible Chat Completions API.
-        # We reuse LangChain's ChatOpenAI wrapper by setting OPENAI_API_BASE.
-        os.environ["OPENAI_API_TYPE"] = 'deepseek'
+    # IMPORTANT:
+    # DeepSeek is OpenAI-compatible, but OpenAI SDK does NOT accept api_type="deepseek".
+    # So we pretend to be openai, and only change base_url + key.
+        os.environ["OPENAI_API_TYPE"] = 'openai'   # ✅ 关键
         os.environ["OPENAI_API_KEY"] = config['DEEPSEEK_API_KEY']
         os.environ["OPENAI_API_BASE"] = config.get('DEEPSEEK_BASE_URL', 'https://api.deepseek.com')
         os.environ["OPENAI_CHAT_MODEL"] = config.get('DEEPSEEK_CHAT_MODEL', 'deepseek-chat')
+
     else:
         raise ValueError("Unknown OPENAI_API_TYPE, should be azure / openai / deepseek")
 

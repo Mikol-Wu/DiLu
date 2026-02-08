@@ -79,8 +79,8 @@ class DriverAgent:
             print("Use DeepSeek (OpenAI-compatible) API")
             self.llm = ChatOpenAI(
                 temperature=temperature,
-                model_name=os.getenv("OPENAI_CHAT_MODEL", "deepseek-chat"),
-                openai_api_base=os.getenv("OPENAI_API_BASE", "https://api.deepseek.com"),
+                model_name=os.getenv("OPENAI_CHAT_MODEL"),
+                openai_api_base=os.getenv("OPENAI_API_BASE"),
                 openai_api_key=os.getenv("OPENAI_API_KEY"),
                 max_tokens=2000,
                 request_timeout=60,

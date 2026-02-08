@@ -27,7 +27,8 @@ AZURE_EMBED_DEPLOY_NAME: # text embed model deployment name
 reflection_module: False # True or False
 few_shot_num: 3 # 0 for zero-shot
 episodes_num: 3 # run episodes
-memory_path: 'memories/20_mem'
+memory_path: 'memories/20_mem_hf'
+
 result_folder: 'results'
 
 ############ Highway-env config ############
