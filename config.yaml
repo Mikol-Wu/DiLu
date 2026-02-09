@@ -26,7 +26,7 @@ AZURE_EMBED_DEPLOY_NAME: # text embed model deployment name
 ############### DiLu settings ############
 reflection_module: True # True or False
 few_shot_num: 3 # 0 for zero-shot
-episodes_num: 10 # run episodes
+episodes_num: 3 # run episodes
 memory_path: 'memories/20_mem_hf'
 
 result_folder: 'results'

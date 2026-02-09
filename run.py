@@ -5,6 +5,7 @@ import yaml
 import os
 from rich import print
 
+from datetime import datetime
 import gymnasium as gym
 from gymnasium.wrappers import RecordVideo
 
@@ -93,10 +94,25 @@ if __name__ == '__main__':
     REFLECTION = config["reflection_module"]
     memory_path = config["memory_path"]
     few_shot_num = config["few_shot_num"]
-    result_folder = config["result_folder"]
 
-    if not os.path.exists(result_folder):
-        os.makedirs(result_folder)
+    # base result folder from config
+    base_result_folder = config["result_folder"]
+
+    # create a unique subfolder for this run
+    run_name = datetime.now().strftime("exp_%Y-%m-%d_%H-%M-%S")
+    result_folder = os.path.join(base_result_folder, run_name)
+
+    os.makedirs(result_folder, exist_ok=True)
+
+    print(f"[green]Results will be saved to:[/green] {result_folder}")
+
+    with open(os.path.join(result_folder, 'log.txt'), 'a') as f:
+        f.write("===== New Run =====\n")
+        f.write(f"episodes_num: {config.get('episodes_num')}\n")
+        f.write(f"enable_safety_shield: {config.get('enable_safety_shield')}\n")
+        f.write(f"enable_diverse_memory: {config.get('enable_diverse_memory')}\n")
+        f.write(f"enable_structured_reflection: {config.get('enable_structured_reflection')}\n\n")
+
 
     with open(os.path.join(result_folder, 'log.txt'), 'w') as f:
         f.write("memory_path {} | result_folder {} | few_shot_num: {} | lanes_count: {} \n".format(
