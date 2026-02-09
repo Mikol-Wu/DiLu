@@ -24,9 +24,9 @@ AZURE_CHAT_DEPLOY_NAME: # chat model deployment name
 AZURE_EMBED_DEPLOY_NAME: # text embed model deployment name  
 
 ############### DiLu settings ############
-reflection_module: False # True or False
+reflection_module: True # True or False
 few_shot_num: 3 # 0 for zero-shot
-episodes_num: 3 # run episodes
+episodes_num: 10 # run episodes
 memory_path: 'memories/20_mem_hf'
 
 result_folder: 'results'
@@ -37,12 +37,21 @@ vehicle_count: 15
 other_vehicle_type: "highway_env.vehicle.behavior.IDMVehicle" #other types are: "highway_env.vehicle.behavior.DefensiveVehicle" or "highway_env.vehicle.behavior.AggressiveVehicle"
 vehicles_density: 2.0
 
-# --- Safety Shield (C) ---
+# --- C: Safety Shield ---
 enable_safety_shield: true
+enable_shield_memory: true
+
 shield_min_front_gap_m: 12.0
 shield_min_front_gap_lc_m: 12.0
 shield_min_back_gap_m: 8.0
 shield_ttc_front_s: 2.5
 shield_ttc_back_s: 1.5
-shield_fallback_action: 4   # 4 = Deceleration
+shield_fallback_action: 4
 
+# --- E: Diverse few-shot (MMR) ---
+enable_diverse_memory: true
+memory_candidate_pool_k: 20
+mmr_lambda: 0.7
+
+# --- D: Structured reflection ---
+enable_structured_reflection: true

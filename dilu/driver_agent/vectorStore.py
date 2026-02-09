@@ -1,126 +1,162 @@
 import os
-import textwrap
+import numpy as np
+from typing import List, Tuple
+
 from langchain.vectorstores import Chroma
 from langchain.embeddings.openai import OpenAIEmbeddings
-
-# LangChain versions differ in where HuggingFaceEmbeddings lives.
-try:
-    from langchain.embeddings import HuggingFaceEmbeddings  # type: ignore
-except Exception:  # pragma: no cover
-    from langchain.embeddings.huggingface import HuggingFaceEmbeddings  # type: ignore
 from langchain.docstore.document import Document
+
+try:
+    from langchain.embeddings import HuggingFaceEmbeddings  # langchain>=0.0.3xx
+except Exception:
+    from langchain.embeddings.huggingface import HuggingFaceEmbeddings
 
 from dilu.scenario.envScenario import EnvScenario
 
 
-class DrivingMemory:
+def _cos_sim(a: np.ndarray, b: np.ndarray) -> float:
+    na = np.linalg.norm(a) + 1e-9
+    nb = np.linalg.norm(b) + 1e-9
+    return float(np.dot(a, b) / (na * nb))
 
+
+def _mmr_select(
+    query_emb: np.ndarray,
+    cand_embs: np.ndarray,
+    cand_scores: np.ndarray,
+    k: int,
+    lambda_mult: float = 0.7,
+) -> List[int]:
+    """
+    Max Marginal Relevance selection.
+    cand_scores: similarity to query (higher is better)
+    """
+    if len(cand_embs) == 0:
+        return []
+    k = min(k, len(cand_embs))
+
+    selected = []
+    # start with max similarity
+    first = int(np.argmax(cand_scores))
+    selected.append(first)
+
+    while len(selected) < k:
+        best_idx = None
+        best_val = -1e9
+        for i in range(len(cand_embs)):
+            if i in selected:
+                continue
+            sim_q = cand_scores[i]
+            sim_s = max(_cos_sim(cand_embs[i], cand_embs[j]) for j in selected)
+            val = lambda_mult * sim_q - (1 - lambda_mult) * sim_s
+            if val > best_val:
+                best_val = val
+                best_idx = i
+        selected.append(int(best_idx))
+    return selected
+
+
+class DrivingMemory:
     def __init__(self, encode_type='sce_language', db_path=None) -> None:
         self.encode_type = encode_type
-        if encode_type == 'sce_encode':
-            # 'sce_encode' is deprecated for now.
-            raise ValueError("encode_type sce_encode is deprecated for now.")
-        elif encode_type == 'sce_language':
-            # Memory embeddings backend:
-            # - openai/azure: use OpenAIEmbeddings (paid)
-            # - hf: use local sentence-transformers embeddings (free; recommended with DeepSeek)
-            embedding_backend = os.getenv("EMBEDDING_BACKEND")
-            if embedding_backend is None:
-                # sensible default: DeepSeek -> hf, others -> openai/azure
-                embedding_backend = "hf" if os.getenv("OPENAI_API_TYPE") == "deepseek" else "openai"
+        if encode_type != 'sce_language':
+            raise ValueError("Only sce_language is supported in this project version.")
 
-            if embedding_backend == "hf":
-                model_name = os.getenv("HF_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
-                self.embedding = HuggingFaceEmbeddings(model_name=model_name)
-            else:
-                # fall back to OpenAI embeddings (works for both openai and azure setups)
-                if os.environ.get("OPENAI_API_TYPE") == 'azure':
-                    self.embedding = OpenAIEmbeddings(
-                        deployment=os.environ['AZURE_EMBED_DEPLOY_NAME'], chunk_size=1)
-                elif os.environ.get("OPENAI_API_TYPE") in ('openai', 'deepseek'):
-                    # deepseek uses OpenAI-compatible base/key, but embeddings may not be available.
-                    # If you really want API embeddings, set EMBEDDING_BACKEND=openai and ensure your
-                    # API base/key supports /v1/embeddings.
-                    self.embedding = OpenAIEmbeddings()
-                else:
-                    raise ValueError(
-                        "Unknown OPENAI_API_TYPE: should be azure / openai / deepseek")
-            db_path = os.path.join(
-                './db', 'chroma_5_shot_20_mem/') if db_path is None else db_path
-            self.scenario_memory = Chroma(
-                embedding_function=self.embedding,
-                persist_directory=db_path
-            )
+        # Embedding backend:
+        # - hf: local sentence-transformers (recommended for DeepSeek)
+        # - openai/azure: OpenAIEmbeddings
+        backend = os.getenv("EMBEDDING_BACKEND")
+        if backend is None:
+            backend = "hf" if os.getenv("OPENAI_API_BASE", "").find("deepseek") >= 0 else "openai"
+
+        if backend == "hf":
+            model_name = os.getenv("HF_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+            self.embedding = HuggingFaceEmbeddings(model_name=model_name)
         else:
-            raise ValueError(
-                "Unknown ENCODE_TYPE: should be sce_encode or sce_language")
-        print("==========Loaded ",db_path," Memory, Now the database has ", len(
-            self.scenario_memory._collection.get(include=['embeddings'])['embeddings']), " items.==========")
+            if os.environ.get("OPENAI_API_TYPE") == 'azure':
+                self.embedding = OpenAIEmbeddings(
+                    deployment=os.environ['AZURE_EMBED_DEPLOY_NAME'], chunk_size=1
+                )
+            else:
+                # openai-compatible (OpenAI or DeepSeek if your base supports embeddings)
+                self.embedding = OpenAIEmbeddings()
 
-    def retriveMemory(self, driving_scenario: EnvScenario, frame_id: int, top_k: int = 5):
-        if self.encode_type == 'sce_encode':
-            pass
-        elif self.encode_type == 'sce_language':
-            query_scenario = driving_scenario.describe(frame_id)
-            similarity_results = self.scenario_memory.similarity_search_with_score(
-                query_scenario, k=top_k)
-            fewshot_results = []
-            for idx in range(0, len(similarity_results)):
-                fewshot_results.append(similarity_results[idx][0].metadata)
-        return fewshot_results
+        db_path = os.path.join('./db', 'chroma_5_shot_20_mem/') if db_path is None else db_path
+        self.scenario_memory = Chroma(
+            embedding_function=self.embedding,
+            persist_directory=db_path
+        )
+        self._db_path = db_path
 
-    def addMemory(self, sce_descrip: str, human_question: str, response: str, action: int, sce: EnvScenario = None, comments: str = ""):
-        if self.encode_type == 'sce_encode':
-            pass
-        elif self.encode_type == 'sce_language':
-            sce_descrip = sce_descrip.replace("'", '')
-        get_results = self.scenario_memory._collection.get(
-            where_document={
-                "$contains": sce_descrip
-            }
+        print(
+            "==========Loaded ", db_path,
+            " Memory, Now the database has ",
+            len(self.scenario_memory._collection.get(include=['embeddings'])['embeddings']),
+            " items.=========="
         )
 
+    def retriveMemory(
+        self,
+        driving_scenario: EnvScenario,
+        frame_id: int,
+        top_k: int = 5,
+        diverse: bool = False,
+        candidate_pool_k: int = 20,
+        mmr_lambda: float = 0.7,
+    ):
+        query_scenario = driving_scenario.describe(frame_id)
+
+        # candidate pool
+        pool_k = max(candidate_pool_k, top_k)
+        similarity_results = self.scenario_memory.similarity_search_with_score(query_scenario, k=pool_k)
+
+        if not diverse or len(similarity_results) <= top_k:
+            return [similarity_results[i][0].metadata for i in range(min(top_k, len(similarity_results)))]
+
+        # MMR selection on embeddings of candidate docs
+        cand_docs = [d for (d, s) in similarity_results]
+        cand_texts = [d.page_content for d in cand_docs]
+
+        # Query embedding + candidate embeddings (batch)
+        query_emb = np.array(self.embedding.embed_query(query_scenario), dtype=np.float32)
+        cand_embs = np.array(self.embedding.embed_documents(cand_texts), dtype=np.float32)
+
+        # Similarity to query via cosine (higher better)
+        cand_scores = np.array([_cos_sim(query_emb, cand_embs[i]) for i in range(len(cand_embs))], dtype=np.float32)
+
+        selected_idx = _mmr_select(query_emb, cand_embs, cand_scores, k=top_k, lambda_mult=mmr_lambda)
+        return [cand_docs[i].metadata for i in selected_idx]
+
+    def addMemory(self, sce_descrip: str, human_question: str, response: str, action: int, sce: EnvScenario = None, comments: str = "", extra_meta: dict = None):
+        sce_descrip = sce_descrip.replace("'", "")
+
+        get_results = self.scenario_memory._collection.get(
+            where_document={"$contains": sce_descrip}
+        )
+
+        meta = {"human_question": human_question, "LLM_response": response, "action": action, "comments": comments}
+        if extra_meta:
+            meta.update(extra_meta)
+
         if len(get_results['ids']) > 0:
-            id = get_results['ids'][0]
-            self.scenario_memory._collection.update(
-                ids=id, metadatas={"human_question": human_question,
-                                   'LLM_response': response, 'action': action, 'comments': comments}
-            )
-            print("Modify a memory item. Now the database has ", len(
-                self.scenario_memory._collection.get(include=['embeddings'])['embeddings']), " items.")
+            _id = get_results['ids'][0]
+            self.scenario_memory._collection.update(ids=_id, metadatas=meta)
         else:
-            doc = Document(
-                page_content=sce_descrip,
-                metadata={"human_question": human_question,
-                          'LLM_response': response, 'action': action, 'comments': comments}
-            )
-            id = self.scenario_memory.add_documents([doc])
-            print("Add a memory item. Now the database has ", len(
-                self.scenario_memory._collection.get(include=['embeddings'])['embeddings']), " items.")
+            doc = Document(page_content=sce_descrip, metadata=meta)
+            self.scenario_memory.add_documents([doc])
 
     def deleteMemory(self, ids):
         self.scenario_memory._collection.delete(ids=ids)
-        print("Delete", len(ids), "memory items. Now the database has ", len(
-            self.scenario_memory._collection.get(include=['embeddings'])['embeddings']), " items.")
 
     def combineMemory(self, other_memory):
-        other_documents = other_memory.scenario_memory._collection.get(
-            include=['documents', 'metadatas', 'embeddings'])
-        current_documents = self.scenario_memory._collection.get(
-            include=['documents', 'metadatas', 'embeddings'])
-        for i in range(0, len(other_documents['embeddings'])):
+        other_documents = other_memory.scenario_memory._collection.get(include=['documents', 'metadatas', 'embeddings'])
+        current_documents = self.scenario_memory._collection.get(include=['documents', 'metadatas', 'embeddings'])
+        for i in range(len(other_documents['embeddings'])):
             if other_documents['embeddings'][i] in current_documents['embeddings']:
-                print("Already have one memory item, skip.")
-            else:
-                self.scenario_memory._collection.add(
-                    embeddings=other_documents['embeddings'][i],
-                    metadatas=other_documents['metadatas'][i],
-                    documents=other_documents['documents'][i],
-                    ids=other_documents['ids'][i]
-                )
-        print("Merge complete. Now the database has ", len(
-            self.scenario_memory._collection.get(include=['embeddings'])['embeddings']), " items.")
-
-
-if __name__ == "__main__":
-    pass
+                continue
+            self.scenario_memory._collection.add(
+                embeddings=other_documents['embeddings'][i],
+                metadatas=other_documents['metadatas'][i],
+                documents=other_documents['documents'][i],
+                ids=other_documents['ids'][i]
+            )
