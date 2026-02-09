@@ -36,3 +36,13 @@ simulation_duration: 20 # step
 vehicle_count: 15
 other_vehicle_type: "highway_env.vehicle.behavior.IDMVehicle" #other types are: "highway_env.vehicle.behavior.DefensiveVehicle" or "highway_env.vehicle.behavior.AggressiveVehicle"
 vehicles_density: 2.0
+
+# --- Safety Shield (C) ---
+enable_safety_shield: true
+shield_min_front_gap_m: 12.0
+shield_min_front_gap_lc_m: 12.0
+shield_min_back_gap_m: 8.0
+shield_ttc_front_s: 2.5
+shield_ttc_back_s: 1.5
+shield_fallback_action: 4   # 4 = Deceleration
+

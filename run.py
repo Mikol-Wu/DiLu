@@ -12,6 +12,8 @@ from dilu.scenario.envScenario import EnvScenario
 from dilu.driver_agent.driverAgent import DriverAgent
 from dilu.driver_agent.vectorStore import DrivingMemory
 from dilu.driver_agent.reflectionAgent import ReflectionAgent
+from dilu.driver_agent.safetyShield import SafetyShield, ShieldConfig
+
 
 
 test_list_seed = [5838, 2421, 7294, 9650, 4176, 6382, 8765, 1348,
@@ -119,6 +121,20 @@ if __name__ == '__main__':
         database_path = result_folder + "/" + result_prefix + ".db"
         sce = EnvScenario(env, envType, seed, database_path)
         DA = DriverAgent(sce, verbose=True)
+
+        # Safety Shield (pre-execution safety check)
+        shield = SafetyShield(
+            cfg=ShieldConfig(
+                min_front_gap_m=config.get("shield_min_front_gap_m", 12.0),
+                min_back_gap_m=config.get("shield_min_back_gap_m", 8.0),
+                min_front_gap_lc_m=config.get("shield_min_front_gap_lc_m", 12.0),
+                ttc_front_s=config.get("shield_ttc_front_s", 2.5),
+                ttc_back_s=config.get("shield_ttc_back_s", 1.5),
+                fallback_action=config.get("shield_fallback_action", 4),
+            ),
+            verbose=True
+        )
+
         if REFLECTION:
             RA = ReflectionAgent(verbose=True)
 
@@ -169,6 +185,15 @@ if __name__ == '__main__':
                     "action": action,
                     "sce": copy.deepcopy(sce)
                 })
+
+                # ---- Safety Shield: intercept unsafe actions before execution ----
+                if config.get("enable_safety_shield", True):
+                    available_actions = sce.env.get_available_actions()
+                    safe_action, shield_info = shield.enforce(sce, action, available_actions)
+                    if shield_info.get("blocked", False):
+                        print(f"[yellow][Shield Blocked][/yellow] {shield_info}")
+                    action = safe_action
+
 
                 obs, reward, done, info, _ = env.step(action)
                 already_decision_steps += 1
